@@ -1,0 +1,37 @@
+{
+  "name": "eclipse-gen",
+  "version": "0.0.0",
+  "description": "Generates an Eclipse project.",
+  "main": "dist/index.js",
+  "bin": {
+    "eclipse-gen": "bin/eclipse-gen.js"
+  },
+  "scripts": {
+    "compile": "rm -rf dist/* && node_modules/.bin/babel src -d dist",
+    "prepublish": "npm run compile",
+    "watch": "node_modules/.bin/babel --watch src -d dist",
+    "test": "node_modules/.bin/mocha --require babel",
+    "start": "node dist"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "cheerio": "~0.18.0",
+    "iced-coffee-script": "~1.8.0-d",
+    "jsondiffpatch": "~0.1.31",
+    "lodash": "^3.10.1",
+    "mkdirp": "~0.5.0",
+    "node-jsxml": "~0.6.0",
+    "pretty-data": "^0.40.0",
+    "prettydiff": "~1.11.1",
+    "prettyjson": "~1.1.0",
+    "underscore": "~1.8.2",
+    "xml-stream": "~0.4.5",
+    "xml2js": "~0.4.5",
+    "xmldom": "~0.1.19"
+  },
+  "devDependencies": {
+    "babel": "^5.8.23",
+    "mocha": "^2.3.3"
+  }
+}
