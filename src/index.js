@@ -9,8 +9,9 @@ const prettydiff = require('prettydiff')
 const cheerio = require('cheerio')
 const mkdirp = require('mkdirp')
 const jsondiffpatch = require('jsondiffpatch')
-const log = console.log
 const yargs = require('yargs')
+const log = console.log
+const chalk = require('chalk')
 //endregion
 
 const pp = function() {
@@ -134,13 +135,18 @@ class EclipseGenerator {
       defs: oldConfig.defs.cpp,
       excludes: oldConfig.excludes
     }
-    delete newConfig.templates
-    delete newConfig.includes
-    delete newConfig.optional
+
+    // These are Box-specific settings that do not have direct mappings to the XML
+    // so we omit them from diffing.
+    newConfig = _.omit(newConfig, ['templates', 'includes', 'optional'])
+
     //console.log(oldConfig, '\n', newConfig)
     const delta = this.jsondiffpatch.diff(oldConfig, newConfig)
-    console.log(`Diff for configuration: ${configuration}`)
-    if (!delta) log('No change.')
+
+    log('-'.repeat(80))
+    console.log(`Configuration: ${chalk.bold(configuration)}`)
+    log('-'.repeat(80))
+    if (!delta) return log(chalk.green('No change.'))
     jsondiffpatch.console.log(delta) // NOTE: We explicitly don't use `this.jsondiffpatch`.
   }
 
@@ -161,6 +167,8 @@ class EclipseGenerator {
     //
     const configurations = opts.configurations || eg.$.getConfigurations()
     let settings = {}
+    // TODO(vjpr): Don't show if there are no changes for a configuration.
+    log('\nThe following changes will be mode:')
     for (let conf of configurations) {
       _.merge(settings, _.get(boxConfig, 'configurations.all', {}), merger)
       _.merge(settings, _.get(boxConfig, ['configurations', conf], {}), merger)
@@ -199,6 +207,8 @@ class EclipseGenerator {
 
   static backup(file) {
 
+    log('\nBacking up...')
+
     const backupDir = join(path.dirname(file), '.cproject-box-backups')
     mkdirp.sync(backupDir)
     const original = fs.readFileSync(file, 'utf8')
@@ -219,7 +229,7 @@ class EclipseGenerator {
     const originalFormatted = EclipseGenerator.format(original)
     fs.writeFileSync(backupFileLatestFormattedPath, originalFormatted)
 
-    log('Backed up old file to:', backupFilePath)
+    log('Backed up old .cproject to:', backupFileLatestPath)
 
   }
 
@@ -233,7 +243,8 @@ class EclipseGenerator {
 
     const eg = new EclipseGenerator(file)
     const configurations = eg.$.getConfigurations()
-    console.log(configurations)
+    log('Found configurations:')
+    log(prettyjson.render(configurations))
 
   }
 
@@ -272,11 +283,11 @@ if (require.main === module.parent) {
   //log('Printing config')
   //pp(boxConfig)
 
-  log('Found configurations:')
   EclipseGenerator.printConfigurations(projectFile, boxConfig)
 
   //EclipseGenerator.performUpdate(projectFile, boxConfig, {configurations: ['Debug_F411']})
   EclipseGenerator.performUpdate(projectFile, boxConfig)
 
+  log('\nDone!\n')
 
 }

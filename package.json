@@ -16,6 +16,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "chalk": "^1.1.1",
     "cheerio": "~0.18.0",
     "iced-coffee-script": "~1.8.0-d",
     "jsondiffpatch": "~0.1.31",
