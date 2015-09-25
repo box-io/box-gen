@@ -33,6 +33,25 @@ class EclipseGenerator {
       // See https://github.com/cheeriojs/cheerio/issues/496.
       decodeEntities: false,
     })
+
+    this.jsondiffpatch = jsondiffpatch.create({
+      // used to match objects when diffing arrays, by default only === operator is used
+      objectHash: function(obj) {
+        // this function is used only to when objects are not equal by ref
+        return obj._id || obj.id
+      },
+      arrays: {
+        // default true, detect items moved inside the array (otherwise they will be registered as remove+add)
+        detectMove: true,
+        // default false, the value of items moved is not included in deltas
+        includeValueOnMove: false,
+      },
+      textDiff: {
+        // default 60, minimum string length (left and right sides) to use text diff algorythm: google-diff-match-patch
+        minLength: 60
+      }
+    })
+
     this.$.prototype.getListOptionValuesAsArray = function(val) {
       return this.find('listOptionValue').map(function() {
         return $(this).attr('value')
@@ -111,25 +130,26 @@ class EclipseGenerator {
   diffXMLChangesAsJSON(configuration, newConfig) {
     let oldConfig = this.getPathsForConfig(configuration)
     oldConfig = {
-      includePaths: oldConfig.includes.cpp,
+      includePaths: oldConfig.includes.cpp, // TODO(vjpr): Only using cpp. Should merge all together.
       defs: oldConfig.defs.cpp,
       excludes: oldConfig.excludes
     }
     delete newConfig.templates
     delete newConfig.includes
     delete newConfig.optional
-    console.log('------------------------')
-    console.log(oldConfig, newConfig)
-    console.log('------------------------')
-    const delta = jsondiffpatch.diff(oldConfig, newConfig)
+    //console.log(oldConfig, '\n', newConfig)
+    const delta = this.jsondiffpatch.diff(oldConfig, newConfig)
     console.log(`Diff for configuration: ${configuration}`)
-    jsondiffpatch.console.log(delta)
+    if (!delta) log('No change.')
+    jsondiffpatch.console.log(delta) // NOTE: We explicitly don't use `this.jsondiffpatch`.
   }
 
   // configurations - leave null to modify all.
   static performUpdate(file, boxConfig, opts = {}) {
 
     const eg = new EclipseGenerator(file)
+
+    const merger = (a, b) => _.isArray(a) ? _.union(a, b) : _.merge(a, b)
 
     //
     // box.js module.exports schema looks like:
@@ -142,8 +162,8 @@ class EclipseGenerator {
     const configurations = opts.configurations || eg.$.getConfigurations()
     let settings = {}
     for (let conf of configurations) {
-      _.merge(settings, _.get(boxConfig, 'configurations.all', {}))
-      _.merge(settings, _.get(boxConfig, ['configurations', conf], {}))
+      _.merge(settings, _.get(boxConfig, 'configurations.all', {}), merger)
+      _.merge(settings, _.get(boxConfig, ['configurations', conf], {}), merger)
       eg.diffXMLChangesAsJSON(conf, settings)
       eg.update(conf, settings)
     }
@@ -156,6 +176,8 @@ class EclipseGenerator {
     log("Successfully updated `" + file + "`")
 
   }
+
+  static mergeArrays
 
   static format(xml) {
 

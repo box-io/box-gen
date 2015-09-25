@@ -32,7 +32,4 @@ node_modules
 
 tmp/
 
-test/fixtures/project-1
-test/fixtures/project-1n
-test/fixtures/project-2
-test/fixtures/project-2n
+dist/
