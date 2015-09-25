@@ -1,10 +1,10 @@
 {
-  "name": "eclipse-gen",
+  "name": "box-gen",
   "version": "0.0.0",
-  "description": "Generates an Eclipse project.",
+  "description": "Generates an GNU ARM Eclipse project from box.js files.",
   "main": "dist/index.js",
   "bin": {
-    "eclipse-gen": "bin/eclipse-gen.js"
+    "box-gen": "bin/box-gen.js"
   },
   "scripts": {
     "compile": "rm -rf dist/* && node_modules/.bin/babel src -d dist",
