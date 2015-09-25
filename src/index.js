@@ -11,7 +11,6 @@ const mkdirp = require('mkdirp')
 const jsondiffpatch = require('jsondiffpatch')
 const log = console.log
 const yargs = require('yargs')
-const {pd} = require('pretty-data')
 //endregion
 
 const pp = function() {
@@ -26,11 +25,25 @@ class EclipseGenerator {
     this.filename = filename
     const original = fs.readFileSync(this.filename, 'utf8')
     const $ = this.$ = cheerio.load(original, {
-      xmlMode: true
+      xmlMode: true,
+      // NOTE: Needs to be false, otherwise `&quot;` strings in original file
+      // are converted to `"`
+      // causing attributes which are not modified to become something like
+      // `<Foo foo="&quot;foo bar&quot;"/>` -> `<Foo foo=""foo bar""/>`.
+      // See https://github.com/cheeriojs/cheerio/issues/496.
+      decodeEntities: false,
     })
     this.$.prototype.getListOptionValuesAsArray = function(val) {
       return this.find('listOptionValue').map(function() {
         return $(this).attr('value')
+      }).toArray()
+    }
+    this.$.getConfiguration = function(configuration) {
+      return $(`configuration[name="${configuration}"]`)
+    }
+    this.$.getConfigurations = function() {
+      return $('configuration').map(function() {
+        return $(this).attr('name')
       }).toArray()
     }
   }
@@ -40,11 +53,11 @@ class EclipseGenerator {
   }
 
   setPaths(lang, key, items) {
+    if (!items) return []
     const el = this.$build.find(`[superClass='${prefix}.${lang}.${key}']`)
     el.empty()
     const results = []
-    for (let i = 0, len = items.length; i < len; i++) {
-      const item = items[i]
+    for (let item of items) {
       const newEl = this.$('<listOptionValue/>').attr({
         builtIn: false,
         value: item
@@ -55,12 +68,13 @@ class EclipseGenerator {
   }
 
   setExcludes(items) {
+    if (!items) return []
     const excluding = items.join('|')
     return this.$("sourceEntries > entry").attr('excluding', excluding)
   }
 
   getPathsForConfig(configuration) {
-    this.$build = this.$("configuration[name=" + configuration + "]")
+    this.$build = this.$.getConfiguration(configuration)
     const includes = {
       assembler: this.getPaths('assembler', 'include.paths'),
       c: this.getPaths('c.compiler', 'include.paths'),
@@ -77,14 +91,14 @@ class EclipseGenerator {
   }
 
   printPaths(configuration) {
-    this.$build = this.$("configuration[name=" + configuration + "]")
+    this.$build = this.$.getConfiguration(configuration)
     const paths = this.getPathsForConfig(configuration)
     return pp(paths)
   }
 
   update(configuration, arg) {
     const {includePaths, excludes, defs} = arg
-    this.$build = this.$("configuration[name=" + configuration + "]")
+    this.$build = this.$.getConfiguration(configuration)
     this.setPaths('assembler', 'include.paths', includePaths)
     this.setPaths('c.compiler', 'include.paths', includePaths)
     this.setPaths('cpp.compiler', 'include.paths', includePaths)
@@ -104,31 +118,101 @@ class EclipseGenerator {
     delete newConfig.templates
     delete newConfig.includes
     delete newConfig.optional
+    console.log('------------------------')
+    console.log(oldConfig, newConfig)
+    console.log('------------------------')
     const delta = jsondiffpatch.diff(oldConfig, newConfig)
-    console.log('Diff:')
+    console.log(`Diff for configuration: ${configuration}`)
     jsondiffpatch.console.log(delta)
   }
 
-  static performUpdate(file, configurations, settings, dry) {
+  // configurations - leave null to modify all.
+  static performUpdate(file, boxConfig, opts = {}) {
+
     const eg = new EclipseGenerator(file)
+
+    //
+    // box.js module.exports schema looks like:
+    //
+    //     configurations.<all|Debug|Release>.<includePaths|defs|includes|excludes>
+    //
+    // TODO(vjpr): Only updates existing configurations at the moment.
+    // Ideally it would create new configurations.
+    //
+    const configurations = opts.configurations || eg.$.getConfigurations()
+    let settings = {}
     for (let conf of configurations) {
+      _.merge(settings, _.get(boxConfig, 'configurations.all', {}))
+      _.merge(settings, _.get(boxConfig, ['configurations', conf], {}))
       eg.diffXMLChangesAsJSON(conf, settings)
       eg.update(conf, settings)
     }
-    if (dry) return
-    const backupDir = path.join(path.dirname(file), '.cproject-box-backups')
-    mkdirp.sync(backupDir)
-    const original = fs.readFileSync(file, 'utf8')
-    const backupFile = path.join(backupDir, ".cproject.bak-" + (+(new Date)))
-    fs.writeFileSync(backupFile, original)
-    log('Backed up old file to:', backupFile)
+
+    if (opts.dry) return
+    EclipseGenerator.backup(file)
     const xml = eg.$.xml()
-    const formatXml = require('./formatXml')
-    //const prettyXML = xml // a
-    const prettyXML = pd.xml(xml) // b
-    //const prettyXML = formatXml(xml) // c
+    const prettyXML = EclipseGenerator.format(xml)
     fs.writeFileSync(file, prettyXML)
     log("Successfully updated `" + file + "`")
+
+  }
+
+  static format(xml) {
+
+    // a
+    //const formatXml = require('./formatXml')
+    //const prettyXML = xml
+    // b
+    const {pd} = require('pretty-data')
+    const prettyXML = pd.xml(xml)
+    // c
+    //const prettyXML = formatXml(xml)
+    // d
+    //const prettyXML = require('./formatXml2')(xml)
+    // e
+    //const prettyXML = xml
+
+    return prettyXML
+  }
+
+  static backup(file) {
+
+    const backupDir = join(path.dirname(file), '.cproject-box-backups')
+    mkdirp.sync(backupDir)
+    const original = fs.readFileSync(file, 'utf8')
+
+    // `.cproject.bak-<timestamp>`
+    const backupFilePath = join(backupDir, ".cproject.bak-" + (+(new Date)))
+    fs.writeFileSync(backupFilePath, original)
+
+    // `.cproject.bak-latest`
+    // We save the latest file as well to allow easy diffing with a merge tool for testing.
+    // We could have used a symlink but avoided it because I am not sure they play well with Windows.
+    const backupFileLatestPath = join(backupDir, '.cproject.bak-latest')
+    fs.writeFileSync(backupFileLatestPath, original)
+
+    // `.cproject.bak-latest-formatted`
+    // We format the original file, because it allows us to easily diff the changes to the XML code rather than the formatting.
+    const backupFileLatestFormattedPath = join(backupDir, '.cproject.bak-latest-formatted')
+    const originalFormatted = EclipseGenerator.format(original)
+    fs.writeFileSync(backupFileLatestFormattedPath, originalFormatted)
+
+    log('Backed up old file to:', backupFilePath)
+
+  }
+
+  static revert(file) {
+    log('To return .cproject to last commit run:')
+    log('\n  git checkout HEAD -- .cproject\n')
+    log('TODO(vjpr): In the future we will revert to a file in the `.cproject-box-backups/` dir.')
+  }
+
+  static printConfigurations(file) {
+
+    const eg = new EclipseGenerator(file)
+    const configurations = eg.$.getConfigurations()
+    console.log(configurations)
+
   }
 
 }
@@ -137,28 +221,40 @@ class EclipseGenerator {
 // TODO: Do something useful - get config.
 if (require.main === module.parent) {
 
+  // File has been run from the command line.
+
   const boxConfig = require(join(process.cwd(), 'box.js'))
 
-  let {configuration} = yargs.argv
-  configuration = configuration || 'Debug'
-  if (!_.isArray(configuration)) configuration = [configuration]
+  //let {configuration} = yargs.argv
+  //configuration = configuration || 'Debug'
+  //if (!_.isArray(configuration)) configuration = [configuration]
 
   const projectFile = join(process.cwd(), '.cproject')
-  //const projectFile = '/Users/Vaughan/dev-quantitec/intranav-node/.cproject-box-backups/.cproject.bak-1442278144199'
 
   if (!fs.existsSync(projectFile)) {
     log('Nothing to do.')
     process.exit()
   }
-  const eg = new EclipseGenerator(projectFile)
-  log('Printing DEBUG paths')
-  eg.printPaths(configuration)
-  log('Printing DEBUG paths complete')
 
-  log('Printing config')
-  pp(boxConfig)
+  let {revert} = yargs.argv
+  if (revert) {
+    EclipseGenerator.revert(projectFile)
+    process.exit()
+  }
 
-  EclipseGenerator.performUpdate(projectFile, ['Debug_F411'], boxConfig)
+  //const eg = new EclipseGenerator(projectFile)
+  //log('Printing DEBUG paths')
+  //eg.printPaths(configuration)
+  //log('Printing DEBUG paths complete')
+  //
+  //log('Printing config')
+  //pp(boxConfig)
+
+  log('Found configurations:')
+  EclipseGenerator.printConfigurations(projectFile, boxConfig)
+
+  //EclipseGenerator.performUpdate(projectFile, boxConfig, {configurations: ['Debug_F411']})
+  EclipseGenerator.performUpdate(projectFile, boxConfig)
 
 
 }
