@@ -87,13 +87,31 @@ class EclipseGenerator {
     return results
   }
 
-  setExcludes(items) {
+  setExcludes($configuration, items) {
     if (!items) return []
+    // In Eclipse: `Project Properties > Paths and Symbols > Source Location`.
+    let rootSourceEntryEl = this.$("sourceEntries > entry[name='']")
+    if (!rootSourceEntryEl.length) {
+      rootSourceEntryEl = this.$('<entry/>').attr({
+        flags: 'VALUE_WORKSPACE_PATH|RESOLVED',
+        kind: 'sourcePath',
+        name: '',
+      })
+      $configuration.find('sourceEntries').append(rootSourceEntryEl).append('\n')
+    }
     const excluding = items.join('|')
-    return this.$("sourceEntries > entry").attr('excluding', excluding)
+    rootSourceEntryEl.attr('excluding', excluding)
+  }
+
+  getExcludes($configuration) {
+    let rootSourceEntryEl = $configuration.find("sourceEntries > entry[name='']")
+    const excluding = rootSourceEntryEl.attr('excluding', excluding)
+    const excludes = excluding ? excluding.split('|') : null
+    return excludes
   }
 
   getPathsForConfig(configuration) {
+    const $configuration = this.$.getConfiguration(configuration)
     this.$build = this.$.getConfiguration(configuration)
     const includes = {
       assembler: this.getPaths('assembler', 'include.paths'),
@@ -105,8 +123,7 @@ class EclipseGenerator {
       c: this.getPaths('c.compiler', 'defs'),
       cpp: this.getPaths('cpp.compiler', 'defs')
     }
-    const excluding = this.$('sourceEntries > entry').attr('excluding')
-    const excludes = excluding ? excluding.split('|') : null
+    const excludes = this.getExcludes($configuration)
     return {includes, defs, excludes}
   }
 
@@ -118,6 +135,7 @@ class EclipseGenerator {
 
   update(configuration, arg) {
     const {includePaths, excludes, defs} = arg
+    const $configuration = this.$.getConfiguration(configuration)
     this.$build = this.$.getConfiguration(configuration)
     this.setPaths('assembler', 'include.paths', includePaths)
     this.setPaths('c.compiler', 'include.paths', includePaths)
@@ -125,7 +143,7 @@ class EclipseGenerator {
     this.setPaths('assembler', 'defs', defs)
     this.setPaths('c.compiler', 'defs', defs)
     this.setPaths('cpp.compiler', 'defs', defs)
-    return this.setExcludes(excludes)
+    return this.setExcludes($configuration, excludes)
   }
 
   diffXMLChangesAsJSON(configuration, newConfig) {
@@ -178,6 +196,8 @@ class EclipseGenerator {
 
       mergedSettings = _(mergedSettings).mapValues((v, k) => {
         switch (k) {
+          // In .cproject these are relative to a sourceRoot.
+          // We assume a single sourceRoot which is the project dir.
         case 'includes':
         case 'excludes':
         case 'optional':
@@ -201,6 +221,7 @@ class EclipseGenerator {
       mergedSettings.excludes = mergedSettings.excludes.concat(mergedSettings.templates || [])
 
       // Remove includes from excludes.
+      // NOTE: `includes` don't exist in .cproject - they are simply "not excluded".
       mergedSettings.excludes = _.difference(mergedSettings.excludes, mergedSettings.includes)
 
       mergedSettings.includePaths = _(mergedSettings.includePaths).unique().run()
@@ -260,6 +281,7 @@ class EclipseGenerator {
           return fs.statSync(path.join(srcpath, file)).isDirectory()
         })
       }
+
       getDirectories(join(rootDir, 'config')).forEach(d => {
         settings.includePaths.push(join('${ProjDirPath}', 'config', d))
       })
