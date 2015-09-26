@@ -150,10 +150,7 @@ class EclipseGenerator {
     jsondiffpatch.console.log(delta) // NOTE: We explicitly don't use `this.jsondiffpatch`.
   }
 
-  // configurations - leave null to modify all.
-  static performUpdate(file, boxConfig, opts = {}) {
-
-    const eg = new EclipseGenerator(file)
+  static getSettingsFromFile(configurations, boxConfig, configFileDir) {
 
     const merger = (a, b) => _.isArray(a) ? _.union(a, b) : _.merge(a, b)
 
@@ -165,16 +162,112 @@ class EclipseGenerator {
     // TODO(vjpr): Only updates existing configurations at the moment.
     // Ideally it would create new configurations.
     //
+
+    // Take a `box.js` file and merge the settings for each configuration,
+    // and return an object.
+    let settingsByConfiguration = {}
+    _(configurations).each((conf) => {
+      let mergedSettings = {}
+      _.merge(mergedSettings, _.get(boxConfig, 'configurations.all', {}), merger)
+      _.merge(mergedSettings, _.get(boxConfig, ['configurations', conf], {}), merger)
+
+      // Files mentioned in `box.js` are relative to their module dir. Eclipse requires
+      // the files to be relative to the project dir.
+      const relFromRoot = (p) => join(configFileDir, p)
+      const wrapDir = (p) => join('${ProjDirPath}', configFileDir, p)
+
+      mergedSettings = _(mergedSettings).mapValues((v, k) => {
+        switch (k) {
+        case 'includes':
+        case 'excludes':
+        case 'optional':
+        case 'templates':
+          v = _(v).map((entry) => relFromRoot(entry)).value()
+          break
+        case 'includePaths':
+          v = _(v).map((entry) => wrapDir(entry)).value()
+          break
+        }
+        return v
+      }).value()
+
+      // Add optionals to excludes.
+      // Optionals can be explicitly included, further down.
+      mergedSettings.excludes = mergedSettings.excludes.concat(mergedSettings.optional || [])
+
+      // Add templates to excludes.
+      // Templates can be manually copied by user, never compiled without changes.
+      // TODO(vjpr): Add cli tool to add templates.
+      mergedSettings.excludes = mergedSettings.excludes.concat(mergedSettings.templates || [])
+
+      // Remove includes from excludes.
+      mergedSettings.excludes = _.difference(mergedSettings.excludes, mergedSettings.includes)
+
+      mergedSettings.includePaths = _(mergedSettings.includePaths).unique().run()
+      mergedSettings.optional = _(mergedSettings.optional).unique().run()
+      mergedSettings.excludes = _(mergedSettings.excludes).unique().run()
+      mergedSettings.defs = _(mergedSettings.defs).unique().run()
+      mergedSettings.defs = _(mergedSettings.defs).without('').run()
+
+      settingsByConfiguration[conf] = mergedSettings
+    }).value()
+
+    return settingsByConfiguration
+
+  }
+
+  // configurations - leave null to modify all.
+  static performUpdate(file, boxConfigFiles = [], opts = {}) {
+
+    const rootDir = process.cwd() // TODO(vjpr): Make more generic?
+
+    const eg = new EclipseGenerator(file)
+
     const configurations = opts.configurations || eg.$.getConfigurations()
-    let settings = {}
+
+    const merger = (a, b) => _.isArray(a) ? _.union(a, b) : _.merge(a, b, merger)
+
+    let mergedSettingsByConfiguration = {}
+    for (let boxConfigFile of boxConfigFiles) {
+      const boxConfig = require(boxConfigFile)
+      let configFileDir = path.dirname(boxConfigFile)
+      configFileDir = path.relative(rootDir, configFileDir)
+      let settingsByConfiguration = EclipseGenerator.getSettingsFromFile(configurations, boxConfig, configFileDir)
+      _.merge(mergedSettingsByConfiguration, settingsByConfiguration, merger)
+
+      // DEBUG
+      //pp(mergedSettingsByConfiguration)
+      //console.log('-------------------')
+    }
+
     // TODO(vjpr): Don't show if there are no changes for a configuration.
     log('\nThe following changes will be mode:')
-    for (let conf of configurations) {
-      _.merge(settings, _.get(boxConfig, 'configurations.all', {}), merger)
-      _.merge(settings, _.get(boxConfig, ['configurations', conf], {}), merger)
+
+    _(mergedSettingsByConfiguration).forEach((settings, conf) => {
+      // `settings` = {includePaths, include, excludes, ...}
+
+      // Add search paths (e.g. modules, node_modules, etc.) to allow relative requires.
+      // E.g. Allows `#include "foo/foo.h"` to include `modules/foo/foo.h`.
+      const searchPaths = ['modules', 'node_modules']
+      searchPaths.forEach((p) => {
+        settings.includePaths.push(join('${ProjDirPath}', p))
+      })
+      // ---
+
+      // Add all dirs in `/config`.
+      function getDirectories(srcpath) {
+        return fs.readdirSync(srcpath).filter(function(file) {
+          return fs.statSync(path.join(srcpath, file)).isDirectory()
+        })
+      }
+      getDirectories(join(rootDir, 'config')).forEach(d => {
+        settings.includePaths.push(join('${ProjDirPath}', 'config', d))
+      })
+      // ---
+
       eg.diffXMLChangesAsJSON(conf, settings)
       eg.update(conf, settings)
-    }
+    }).value()
 
     if (opts.dry) return
     EclipseGenerator.backup(file)
@@ -184,8 +277,6 @@ class EclipseGenerator {
     log("Successfully updated `" + file + "`")
 
   }
-
-  static mergeArrays
 
   static format(xml) {
 
@@ -243,7 +334,7 @@ class EclipseGenerator {
 
     const eg = new EclipseGenerator(file)
     const configurations = eg.$.getConfigurations()
-    log('Found configurations:')
+    log('Found configurations in .cproject:')
     log(prettyjson.render(configurations))
 
   }
@@ -256,7 +347,8 @@ if (require.main === module.parent) {
 
   // File has been run from the command line.
 
-  const boxConfig = require(join(process.cwd(), 'box.js'))
+  const rootBoxConfigFile = join(process.cwd(), 'box.js')
+  const rootBoxConfig = require(rootBoxConfigFile)
 
   //let {configuration} = yargs.argv
   //configuration = configuration || 'Debug'
@@ -283,10 +375,18 @@ if (require.main === module.parent) {
   //log('Printing config')
   //pp(boxConfig)
 
-  EclipseGenerator.printConfigurations(projectFile, boxConfig)
+  EclipseGenerator.printConfigurations(projectFile)
+
+  const glob = require('glob')
+  const configFiles = glob.sync(process.cwd() + '/modules/*/box.js')
+
+  // Print found config files.
+  log('Found configs in project dir:')
+  const allConfigFiles = [...configFiles, rootBoxConfigFile]
+  pp(allConfigFiles.map((file) => path.resolve(process.cwd(), file)))
 
   //EclipseGenerator.performUpdate(projectFile, boxConfig, {configurations: ['Debug_F411']})
-  EclipseGenerator.performUpdate(projectFile, boxConfig)
+  EclipseGenerator.performUpdate(projectFile, allConfigFiles)
 
   log('\nDone!\n')
 
