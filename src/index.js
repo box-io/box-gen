@@ -68,13 +68,13 @@ class EclipseGenerator {
     }
   }
 
-  getPaths(lang, key) {
-    return this.$build.find(`[superClass='${prefix}.${lang}.${key}']`).getListOptionValuesAsArray()
+  getPaths($configuration, lang, key) {
+    return $configuration.find(`[superClass='${prefix}.${lang}.${key}']`).getListOptionValuesAsArray()
   }
 
-  setPaths(lang, key, items) {
+  setPaths($configuration, lang, key, items) {
     if (!items) return []
-    const el = this.$build.find(`[superClass='${prefix}.${lang}.${key}']`)
+    const el = $configuration.find(`[superClass='${prefix}.${lang}.${key}']`)
     el.empty()
     const results = []
     for (let item of items) {
@@ -90,7 +90,7 @@ class EclipseGenerator {
   setExcludes($configuration, items) {
     if (!items) return []
     // In Eclipse: `Project Properties > Paths and Symbols > Source Location`.
-    let rootSourceEntryEl = this.$("sourceEntries > entry[name='']")
+    let rootSourceEntryEl = $configuration.find('sourceEntries > entry[name=""]')
     if (!rootSourceEntryEl.length) {
       rootSourceEntryEl = this.$('<entry/>').attr({
         flags: 'VALUE_WORKSPACE_PATH|RESOLVED',
@@ -104,31 +104,30 @@ class EclipseGenerator {
   }
 
   getExcludes($configuration) {
-    let rootSourceEntryEl = $configuration.find("sourceEntries > entry[name='']")
-    const excluding = rootSourceEntryEl.attr('excluding', excluding)
-    const excludes = excluding ? excluding.split('|') : null
+    const $ = this.$
+    let rootSourceEntryEl = $configuration.find('sourceEntries > entry[name=""]')
+    const excluding = rootSourceEntryEl.attr('excluding')
+    const excludes = excluding ? excluding.split('|') : []
     return excludes
   }
 
   getPathsForConfig(configuration) {
     const $configuration = this.$.getConfiguration(configuration)
-    this.$build = this.$.getConfiguration(configuration)
     const includes = {
-      assembler: this.getPaths('assembler', 'include.paths'),
-      c: this.getPaths('c.compiler', 'include.paths'),
-      cpp: this.getPaths('cpp.compiler', 'include.paths')
+      assembler: this.getPaths($configuration, 'assembler', 'include.paths'),
+      c: this.getPaths($configuration, 'c.compiler', 'include.paths'),
+      cpp: this.getPaths($configuration, 'cpp.compiler', 'include.paths')
     }
     const defs = {
-      assembler: this.getPaths('assembler', 'defs'),
-      c: this.getPaths('c.compiler', 'defs'),
-      cpp: this.getPaths('cpp.compiler', 'defs')
+      assembler: this.getPaths($configuration, 'assembler', 'defs'),
+      c: this.getPaths($configuration, 'c.compiler', 'defs'),
+      cpp: this.getPaths($configuration, 'cpp.compiler', 'defs')
     }
     const excludes = this.getExcludes($configuration)
     return {includes, defs, excludes}
   }
 
   printPaths(configuration) {
-    this.$build = this.$.getConfiguration(configuration)
     const paths = this.getPathsForConfig(configuration)
     return pp(paths)
   }
@@ -136,13 +135,12 @@ class EclipseGenerator {
   update(configuration, arg) {
     const {includePaths, excludes, defs} = arg
     const $configuration = this.$.getConfiguration(configuration)
-    this.$build = this.$.getConfiguration(configuration)
-    this.setPaths('assembler', 'include.paths', includePaths)
-    this.setPaths('c.compiler', 'include.paths', includePaths)
-    this.setPaths('cpp.compiler', 'include.paths', includePaths)
-    this.setPaths('assembler', 'defs', defs)
-    this.setPaths('c.compiler', 'defs', defs)
-    this.setPaths('cpp.compiler', 'defs', defs)
+    this.setPaths($configuration, 'assembler', 'include.paths', includePaths)
+    this.setPaths($configuration, 'c.compiler', 'include.paths', includePaths)
+    this.setPaths($configuration, 'cpp.compiler', 'include.paths', includePaths)
+    this.setPaths($configuration, 'assembler', 'defs', defs)
+    this.setPaths($configuration, 'c.compiler', 'defs', defs)
+    this.setPaths($configuration, 'cpp.compiler', 'defs', defs)
     return this.setExcludes($configuration, excludes)
   }
 
@@ -185,7 +183,14 @@ class EclipseGenerator {
     // and return an object.
     let settingsByConfiguration = {}
     _(configurations).each((conf) => {
-      let mergedSettings = {}
+      let mergedSettings = {
+        excludes: [],
+        includePaths: [],
+        optional: [],
+        defs: [],
+        templates: [],
+      }
+
       _.merge(mergedSettings, _.get(boxConfig, 'configurations.all', {}), merger)
       _.merge(mergedSettings, _.get(boxConfig, ['configurations', conf], {}), merger)
 
