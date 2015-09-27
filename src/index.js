@@ -18,7 +18,54 @@ const pp = function() {
   return console.log(prettyjson.render.apply(prettyjson, arguments))
 }
 
-const prefix = 'ilg.gnuarmeclipse.managedbuild.cross.option'
+//
+// Include Paths patterns.
+//
+// TODO: Move docs somewhere else.
+
+// Cross GCC
+// <configuration artifactName="${ProjName}" buildArtefactType="org.eclipse.cdt.build.core.buildArtefactType.exe" buildProperties="org.eclipse.cdt.build.core.buildArtefactType=org.eclipse.cdt.build.core.buildArtefactType.exe,org.eclipse.cdt.build.core.buildType=org.eclipse.cdt.build.core.buildType.debug" cleanCommand="rm -rf" description="Run Google Tests on local machine." id="cdt.managedbuild.config.gnu.cross.exe.debug.1637339521" name="buildTestGoogleTest" parent="cdt.managedbuild.config.gnu.cross.exe.debug">
+// <option id="gnu.c.compiler.option.include.paths.2056425181" name="Include paths (-I)" superClass="gnu.c.compiler.option.include.paths" useByScannerDiscovery="false" valueType="includePath">
+
+// Cross ARM GCC
+// <configuration artifactName="${ProjName}" buildArtefactType="org.eclipse.cdt.build.core.buildArtefactType.exe" buildProperties="org.eclipse.cdt.build.core.buildArtefactType=org.eclipse.cdt.build.core.buildArtefactType.exe,org.eclipse.cdt.build.core.buildType=org.eclipse.cdt.build.core.buildType.debug" cleanCommand="${cross_rm} -rf" description="Flash to F411" errorParsers="org.eclipse.cdt.core.GmakeErrorParser;org.eclipse.cdt.core.CWDLocator;org.eclipse.cdt.core.GCCErrorParser;org.eclipse.cdt.core.GASErrorParser;org.eclipse.cdt.core.GLDErrorParser" id="ilg.gnuarmeclipse.managedbuild.cross.config.elf.debug.764883146" name="buildDebugF411" parent="ilg.gnuarmeclipse.managedbuild.cross.config.elf.debug" postannouncebuildStep="" postbuildStep="" preannouncebuildStep="" prebuildStep="">
+// <option id="ilg.gnuarmeclipse.managedbuild.cross.option.assembler.include.paths.136940756" name="Include paths (-I)" superClass="ilg.gnuarmeclipse.managedbuild.cross.option.assembler.include.paths" valueType="includePath">
+
+// Include Paths:
+// Cross GCC     => gnu.c.compiler.option.include.paths
+// Cross ARM GCC => ilg.gnuarmeclipse.managedbuild.cross.option.assembler.include.paths
+// --
+
+//
+//
+//
+
+// Depending on which toolchain is used, the attribute keys are different.
+const getIncludePathsEl = ($configuration, lang, key) => {
+  let superClass = ''
+  let el
+  const toolChainName = $configuration.find('toolChain').attr('name')
+  switch (toolChainName) {
+  case 'Cross GCC':
+    //
+    // We use `valueType` because the superClass differs depending on lang:
+    //   c.compiler => 'preprocessor.def.symbols'
+    //   cpp.compiler => 'preprocessor.def'
+    //
+    if (key === 'defs') {
+      el = $configuration.find(`[valueType="definedSymbols"]`)
+    } else {
+      superClass = `gnu.${lang}.option.${key}`
+      el = $configuration.find(`[superClass='${superClass}']`)
+    }
+    break
+  case 'Cross ARM GCC':
+    superClass = `ilg.gnuarmeclipse.managedbuild.cross.option.${lang}.${key}`
+    el = $configuration.find(`[superClass='${superClass}']`)
+    break
+  }
+  return el
+}
 
 class EclipseGenerator {
 
@@ -69,12 +116,12 @@ class EclipseGenerator {
   }
 
   getPaths($configuration, lang, key) {
-    return $configuration.find(`[superClass='${prefix}.${lang}.${key}']`).getListOptionValuesAsArray()
+    return getIncludePathsEl($configuration, lang, key).getListOptionValuesAsArray()
   }
 
   setPaths($configuration, lang, key, items) {
     if (!items) return []
-    const el = $configuration.find(`[superClass='${prefix}.${lang}.${key}']`)
+    const el = getIncludePathsEl($configuration, lang, key)
     el.empty()
     const results = []
     for (let item of items) {
@@ -135,6 +182,7 @@ class EclipseGenerator {
   update(configuration, arg) {
     const {includePaths, excludes, defs} = arg
     const $configuration = this.$.getConfiguration(configuration)
+    //console.log(this.$.html($configuration))
     this.setPaths($configuration, 'assembler', 'include.paths', includePaths)
     this.setPaths($configuration, 'c.compiler', 'include.paths', includePaths)
     this.setPaths($configuration, 'cpp.compiler', 'include.paths', includePaths)
@@ -287,9 +335,17 @@ class EclipseGenerator {
         })
       }
 
-      getDirectories(join(rootDir, 'config')).forEach(d => {
-        settings.includePaths.push(join('${ProjDirPath}', 'config', d))
-      })
+      try {
+        getDirectories(join(rootDir, 'config')).forEach(d => {
+          settings.includePaths.push(join('${ProjDirPath}', 'config', d))
+        })
+      } catch (e) {
+        if (e.code === 'ENOENT') {
+          console.warn("config dir doesn't exist.")
+        } else {
+          throw e
+        }
+      }
       // ---
 
       eg.diffXMLChangesAsJSON(conf, settings)
@@ -408,7 +464,7 @@ if (require.main === module.parent) {
   const configFiles = glob.sync(process.cwd() + '/modules/*/box.js')
 
   // Print found config files.
-  log('Found configs in project dir:')
+  log('Found configs in [project root and modules] dir:')
   const allConfigFiles = [...configFiles, rootBoxConfigFile]
   pp(allConfigFiles.map((file) => path.resolve(process.cwd(), file)))
 
