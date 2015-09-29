@@ -214,9 +214,15 @@ class EclipseGenerator {
     jsondiffpatch.console.log(delta) // NOTE: We explicitly don't use `this.jsondiffpatch`.
   }
 
-  static getSettingsFromFile(configurations, boxConfig, configFileDir) {
+  // This is extracted here because if we want to support different `box.js` file formats
+  // we can implement this here.
+  // TODO(vjpr): Support other file formats.
+  static getSettingsFromConfig(boxConfig, key) {
+    return _.get(boxConfig, key, {})
+  }
 
-    const merger = (a, b) => _.isArray(a) ? _.union(a, b) : _.merge(a, b)
+  // TODO(vjpr): This should be renamed to getMergedSettings.
+  static getSettingsFromFile(configurations, boxConfig, configFileDir) {
 
     //
     // box.js module.exports schema looks like:
@@ -239,8 +245,9 @@ class EclipseGenerator {
         templates: [],
       }
 
-      _.merge(mergedSettings, _.get(boxConfig, 'configurations.all', {}), merger)
-      _.merge(mergedSettings, _.get(boxConfig, ['configurations', conf], {}), merger)
+      const merger = (a, b) => _.isArray(a) ? _.union(a, b) : _.merge(a, b)
+      _.merge(mergedSettings, EclipseGenerator.getSettingsFromConfig(boxConfig, 'configurations.all'), merger)
+      _.merge(mergedSettings, EclipseGenerator.getSettingsFromConfig(boxConfig, ['configurations', conf]), merger)
 
       // Files mentioned in `box.js` are relative to their module dir. Eclipse requires
       // the files to be relative to the project dir.
@@ -264,25 +271,6 @@ class EclipseGenerator {
         return v
       }).value()
 
-      // Add optionals to excludes.
-      // Optionals can be explicitly included, further down.
-      mergedSettings.excludes = mergedSettings.excludes.concat(mergedSettings.optional || [])
-
-      // Add templates to excludes.
-      // Templates can be manually copied by user, never compiled without changes.
-      // TODO(vjpr): Add cli tool to add templates.
-      mergedSettings.excludes = mergedSettings.excludes.concat(mergedSettings.templates || [])
-
-      // Remove includes from excludes.
-      // NOTE: `includes` don't exist in .cproject - they are simply "not excluded".
-      mergedSettings.excludes = _.difference(mergedSettings.excludes, mergedSettings.includes)
-
-      mergedSettings.includePaths = _(mergedSettings.includePaths).unique().run()
-      mergedSettings.optional = _(mergedSettings.optional).unique().run()
-      mergedSettings.excludes = _(mergedSettings.excludes).unique().run()
-      mergedSettings.defs = _(mergedSettings.defs).unique().run()
-      mergedSettings.defs = _(mergedSettings.defs).without('').run()
-
       settingsByConfiguration[conf] = mergedSettings
     }).value()
 
@@ -303,6 +291,7 @@ class EclipseGenerator {
 
     let mergedSettingsByConfiguration = {}
     for (let boxConfigFile of boxConfigFiles) {
+      requireConfig(boxConfigFile)
       const boxConfig = require(boxConfigFile)
       let configFileDir = path.dirname(boxConfigFile)
       configFileDir = path.relative(rootDir, configFileDir)
@@ -320,11 +309,33 @@ class EclipseGenerator {
     _(mergedSettingsByConfiguration).forEach((settings, conf) => {
       // `settings` = {includePaths, include, excludes, ...}
 
+      //////////////////////////////////////////////////////////////////////////
+      // Add optionals to excludes.
+      // Optionals can be explicitly included, further down.
+      settings.excludes = settings.excludes.concat(settings.optional || [])
+
+      // Add templates to excludes.
+      // Templates can be manually copied by user, never compiled without changes.
+      // TODO(vjpr): Add cli tool to add templates.
+      settings.excludes = settings.excludes.concat(settings.templates || [])
+
+      // Remove includes from excludes.
+      // NOTE: `includes` don't exist in .cproject - they are simply "not excluded".
+      settings.excludes = _.difference(settings.excludes, settings.includes)
+
+      settings.includePaths = _(settings.includePaths).unique().run()
+      settings.optional = _(settings.optional).unique().run()
+      settings.excludes = _(settings.excludes).unique().run()
+      settings.defs = _(settings.defs).unique().run()
+      settings.defs = _(settings.defs).without('').run()
+      //////////////////////////////////////////////////////////////////////////
+
       // Add search paths (e.g. modules, node_modules, etc.) to allow relative requires.
       // E.g. Allows `#include "foo/foo.h"` to include `modules/foo/foo.h`.
-      const searchPaths = ['modules', 'node_modules']
+      const searchPaths = ['modules', 'node_modules', 'config', '.']
       searchPaths.forEach((p) => {
         settings.includePaths.push(join('${ProjDirPath}', p))
+        // TODO(vjpr): Check for duplicates.
       })
       // ---
 
@@ -424,6 +435,13 @@ class EclipseGenerator {
 
 }
 
+// Attempts to require file and sets up anything neccessary to require it.
+function requireConfig(p) {
+  const config = require('interpret').extensions
+  const rechoir = require('rechoir')
+  const autoloads = rechoir.prepare(config, p)
+}
+
 // DEBUG: Print paths if not used as library.
 // TODO: Do something useful - get config.
 if (require.main === module.parent) {
@@ -431,6 +449,8 @@ if (require.main === module.parent) {
   // File has been run from the command line.
 
   const rootBoxConfigFile = join(process.cwd(), 'box.js')
+
+  requireConfig(rootBoxConfigFile)
   const rootBoxConfig = require(rootBoxConfigFile)
 
   //let {configuration} = yargs.argv
