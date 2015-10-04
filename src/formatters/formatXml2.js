@@ -1,3 +1,5 @@
+/* eslint-disable */
+
 module.exports = function(xml) {
   var reg = /(>)\s*(<)(\/*)/g; // updated Mar 30, 2015
   var wsexp = / *(.*) +\n/g;

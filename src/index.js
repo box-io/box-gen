@@ -96,8 +96,8 @@ class EclipseGenerator {
       },
       textDiff: {
         // default 60, minimum string length (left and right sides) to use text diff algorythm: google-diff-match-patch
-        minLength: 60
-      }
+        minLength: 60,
+      },
     })
 
     this.$.prototype.getListOptionValuesAsArray = function(val) {
@@ -127,7 +127,7 @@ class EclipseGenerator {
     for (let item of items) {
       const newEl = this.$('<listOptionValue/>').attr({
         builtIn: false,
-        value: item
+        value: item,
       })
       results.push(el.append(newEl).append('\n'))
     }
@@ -163,12 +163,12 @@ class EclipseGenerator {
     const includes = {
       assembler: this.getPaths($configuration, 'assembler', 'include.paths'),
       c: this.getPaths($configuration, 'c.compiler', 'include.paths'),
-      cpp: this.getPaths($configuration, 'cpp.compiler', 'include.paths')
+      cpp: this.getPaths($configuration, 'cpp.compiler', 'include.paths'),
     }
     const defs = {
       assembler: this.getPaths($configuration, 'assembler', 'defs'),
       c: this.getPaths($configuration, 'c.compiler', 'defs'),
-      cpp: this.getPaths($configuration, 'cpp.compiler', 'defs')
+      cpp: this.getPaths($configuration, 'cpp.compiler', 'defs'),
     }
     const excludes = this.getExcludes($configuration)
     return {includes, defs, excludes}
@@ -197,7 +197,7 @@ class EclipseGenerator {
     oldConfig = {
       includePaths: oldConfig.includes.cpp, // TODO(vjpr): Only using cpp. Should merge all together.
       defs: oldConfig.defs.cpp,
-      excludes: oldConfig.excludes
+      excludes: oldConfig.excludes,
     }
 
     // These are Box-specific settings that do not have direct mappings to the XML
@@ -352,7 +352,7 @@ class EclipseGenerator {
         })
       } catch (e) {
         if (e.code === 'ENOENT') {
-          console.warn("config dir doesn't exist.")
+          console.warn('config dir doesn\'t exist.')
         } else {
           throw e
         }
@@ -368,7 +368,7 @@ class EclipseGenerator {
     const xml = eg.$.xml()
     const prettyXML = EclipseGenerator.format(xml)
     fs.writeFileSync(file, prettyXML)
-    log("Successfully updated `" + file + "`")
+    log(`Successfully updated \`${file}\``)
 
   }
 
@@ -399,7 +399,7 @@ class EclipseGenerator {
     const original = fs.readFileSync(file, 'utf8')
 
     // `.cproject.bak-<timestamp>`
-    const backupFilePath = join(backupDir, ".cproject.bak-" + (+(new Date)))
+    const backupFilePath = join(backupDir, '.cproject.bak-' + (+(new Date)))
     fs.writeFileSync(backupFilePath, original)
 
     // `.cproject.bak-latest`
