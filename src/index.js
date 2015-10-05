@@ -1,7 +1,6 @@
 //region Imports
 const debug = require('debug')('eclipse-gen')
 const path = require('path')
-const {join} = path
 const fs = require('fs')
 const _ = require('lodash')
 const prettyjson = require('prettyjson')
@@ -12,10 +11,25 @@ const jsondiffpatch = require('jsondiffpatch')
 const yargs = require('yargs')
 const log = console.log
 const chalk = require('chalk')
+require('string.prototype.repeat')
+const {Validator} = require('jsonschema')
 //endregion
 
 const pp = function() {
   return console.log(prettyjson.render.apply(prettyjson, arguments))
+}
+
+// We use nix-style separators when writing the xml file to prevent vcs churn.
+// const {join} = path.
+// TODO(vjpr): Check this doesn't break on Windows.
+function join() {
+  var paths = Array.prototype.slice.call(arguments, 0)
+  return path.normalize(paths.filter(function(p, index) {
+    if (typeof p !== 'string') {
+      throw new TypeError('Arguments to path.join must be strings')
+    }
+    return p
+  }).join('/'))
 }
 
 //
@@ -291,8 +305,7 @@ class EclipseGenerator {
 
     let mergedSettingsByConfiguration = {}
     for (let boxConfigFile of boxConfigFiles) {
-      requireConfig(boxConfigFile)
-      const boxConfig = require(boxConfigFile)
+      const boxConfig = requireConfig(boxConfigFile)
       let configFileDir = path.dirname(boxConfigFile)
       configFileDir = path.relative(rootDir, configFileDir)
       let settingsByConfiguration = EclipseGenerator.getSettingsFromFile(configurations, boxConfig, configFileDir)
@@ -440,6 +453,11 @@ function requireConfig(p) {
   const config = require('interpret').extensions
   const rechoir = require('rechoir')
   const autoloads = rechoir.prepare(config, p)
+  const v = new Validator
+  const val = v.validate(boxConfig, box)
+  const {box, configuration} = require('../schema')
+  v.addSchema(configuration)
+  return require(p)
 }
 
 // DEBUG: Print paths if not used as library.
@@ -450,8 +468,7 @@ if (require.main === module.parent) {
 
   const rootBoxConfigFile = join(process.cwd(), 'box.js')
 
-  requireConfig(rootBoxConfigFile)
-  const rootBoxConfig = require(rootBoxConfigFile)
+  const rootBoxConfig = requireConfig(rootBoxConfigFile)
 
   //let {configuration} = yargs.argv
   //configuration = configuration || 'Debug'

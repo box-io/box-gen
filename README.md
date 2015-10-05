@@ -8,6 +8,8 @@
 npm install -g box-gen
 ```
 
+In Eclipse enable `Preferences > General > Workspace > Refresh using native hooks or polling`. Otherwise, after running `box-gen` the IDE will not immediately take up the changes to `.cproject`. 
+
 ### Windows
 
 - Install Visual Studio 2015 Community Edition.
