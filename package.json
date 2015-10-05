@@ -1,6 +1,6 @@
 {
   "name": "box-gen",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "description": "Generates an GNU ARM Eclipse project from box.js files.",
   "main": "dist/index.js",
   "bin": {
