@@ -22,14 +22,10 @@ const pp = function() {
 // We use nix-style separators when writing the xml file to prevent vcs churn.
 // const {join} = path.
 // TODO(vjpr): Check this doesn't break on Windows.
-function join() {
-  var paths = Array.prototype.slice.call(arguments, 0)
-  return path.normalize(paths.filter(function(p, index) {
-    if (typeof p !== 'string') {
-      throw new TypeError('Arguments to path.join must be strings')
-    }
-    return p
-  }).join('/'))
+function join(...args) {
+  let newPath = path.join(...args)
+  newPath = require('normalize-path')(newPath)
+  return newPath
 }
 
 //
@@ -355,7 +351,7 @@ class EclipseGenerator {
       // Add all dirs in `/config`.
       function getDirectories(srcpath) {
         return fs.readdirSync(srcpath).filter(function(file) {
-          return fs.statSync(path.join(srcpath, file)).isDirectory()
+          return fs.statSync(join(srcpath, file)).isDirectory()
         })
       }
 
@@ -453,11 +449,13 @@ function requireConfig(p) {
   const config = require('interpret').extensions
   const rechoir = require('rechoir')
   const autoloads = rechoir.prepare(config, p)
+  const boxConfig = require(p)
+  const {box, configuration} = require('./schema')
   const v = new Validator
-  const val = v.validate(boxConfig, box)
-  const {box, configuration} = require('../schema')
   v.addSchema(configuration)
-  return require(p)
+  const val = v.validate(boxConfig, box)
+  if (val.errors.length) throw val.errors
+  return boxConfig
 }
 
 // DEBUG: Print paths if not used as library.

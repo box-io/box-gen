@@ -7,7 +7,7 @@
     "box-gen": "bin/box-gen.js"
   },
   "scripts": {
-    "compile": "node_modules/.bin/rimraf dist/* && node_modules/.bin/babel src -d dist",
+    "compile": "gulp compile",
     "prepublish": "npm run compile",
     "watch": "node_modules/.bin/babel --watch src -d dist",
     "test": "node_modules/.bin/mocha --require babel",
@@ -28,6 +28,7 @@
     "mkdirp": "~0.5.0",
     "mocha": "^2.3.3",
     "node-dir": "^0.1.10",
+    "normalize-path": "^2.0.0",
     "pretty-data": "^0.40.0",
     "prettydiff": "~1.11.1",
     "prettyjson": "~1.1.0",
@@ -42,6 +43,7 @@
     "chai": "^3.3.0",
     "eslint": "^1.5.1",
     "gulp": "^3.9.0",
+    "gulp-babel": "^5.2.1",
     "gulp-eslint": "^1.0.0",
     "gulp-load-plugins": "^0.10.0",
     "mocha": "^2.3.3",
